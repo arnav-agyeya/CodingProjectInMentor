@@ -1,5 +1,8 @@
 package com.Logger;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
 public interface ILogClient {
 
     /**
@@ -10,7 +13,7 @@ public interface ILogClient {
     /**
      * When the same process ends, it calls 'end' with processId.
      */
-    void end(String processId);
+    void end(String processId) throws InterruptedException, ExecutionException, TimeoutException;
 
     /**
      * Polls the first log entry of a completed process sorted by the start time of processes in the below format
@@ -24,5 +27,5 @@ public interface ILogClient {
      * {2} started at {8} and ended at {12}
      * {1} started at {12} and ended at {15}
      */
-    String poll();
+    String poll() throws ExecutionException, InterruptedException, TimeoutException;
 }
