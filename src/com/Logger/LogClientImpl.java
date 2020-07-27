@@ -1,7 +1,6 @@
 package com.Logger;
 
-import java.util.Comparator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -13,13 +12,19 @@ public class LogClientImpl implements ILogClient {
 
     private ConcurrentHashMap<String, IProcess> processMap;
     private ConcurrentSkipListMap<Long, String> activeProcessQueue;
-    private CopyOnWriteArrayList<CompletableFuture<String>> completableFutures;
+    private BlockingQueue<CompletableFuture<String>> pendingCallsForPoll;
+    private List<ExecutorService> threadPool;
     private Lock lock = new ReentrantLock();
 
-    public LogClientImpl() {
+    public LogClientImpl(int threadSize) {
         processMap = new ConcurrentHashMap<>();
         activeProcessQueue = new ConcurrentSkipListMap<>(Comparator.comparingInt(Long::intValue));
-        completableFutures = new CopyOnWriteArrayList<>();
+        pendingCallsForPoll = new LinkedBlockingQueue<>();
+        threadPool = new ArrayList<>(){{
+            for (int i = 0; i < threadSize; i++) {
+                add(Executors.newSingleThreadExecutor());
+            }
+        }};
     }
 
     /**
@@ -30,8 +35,10 @@ public class LogClientImpl implements ILogClient {
      */
     @Override
     public void start(String processId, long timestamp) {
-        processMap.put(processId, new Process(processId, timestamp));
-        activeProcessQueue.put(timestamp, processId);
+        threadPool.get(processId.hashCode()%threadPool.size()).execute(()->{
+            processMap.put(processId, new Process(processId, timestamp));
+            activeProcessQueue.put(timestamp, processId);
+        });
     }
 
     /**
@@ -40,19 +47,23 @@ public class LogClientImpl implements ILogClient {
      * @param processId
      */
     @Override
-    public void end(String processId) throws InterruptedException, ExecutionException, TimeoutException {
-        lock.lock();
-        try {
+    public void end(String processId) {
+        threadPool.get(processId.hashCode()%threadPool.size()).execute(()->{
             processMap.get(processId).setEndTime(System.currentTimeMillis());
-            if (processId.equals(activeProcessQueue.firstEntry().getValue()) && !completableFutures.isEmpty()) {
-                System.out.println(poll());
-                CompletableFuture<String> completableFuture = completableFutures.remove(0);
-                completableFuture.complete(getResStringIfProcessComplete(processId, processMap.get(processId)));
+            String result;
+            lock.lock();
+            try {
+                if (!pendingCallsForPoll.isEmpty() && (result = pollNow()) != null) {
+                    try {
+                        pendingCallsForPoll.take().complete(result);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            } finally {
+                lock.unlock();
             }
-        } finally {
-            lock.unlock();
-        }
-
+        });
     }
 
     /**
@@ -65,24 +76,34 @@ public class LogClientImpl implements ILogClient {
      * {1} started at {12} and ended at {15}
      */
     @Override
-    public String poll() throws ExecutionException, InterruptedException, TimeoutException {
+    public String poll()  {
 
-        lock.lock();
+        var result = new CompletableFuture<String>();
+        lock.lock(); //lock required while working on pendingCallsForPoll as it is used by end() as well.
         try {
-            var result = new CompletableFuture<String>();
-            if (!activeProcessQueue.isEmpty() && getProcessFromProcessMap(activeProcessQueue.firstEntry()).getEndTime() != -1L) {
-                Map.Entry<Long, String> longStringEntry = activeProcessQueue.pollFirstEntry();
-                String res = getResStringIfProcessComplete(getProcessFromProcessMap(longStringEntry).getProcessID(),
-                        getProcessFromProcessMap(longStringEntry));
-                result.complete(res);
+            if ( pendingCallsForPoll.isEmpty()) {
+                return pollNow();
             } else {
-                completableFutures.add(result);
+                pendingCallsForPoll.offer(result);
             }
-            return result.get(1, TimeUnit.SECONDS);
         } finally {
             lock.unlock();
         }
+        try {
+            return result.get(3, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            throw new RuntimeException("Timed Out");
+        }
+    }
 
+    private String pollNow() {
+        if(!activeProcessQueue.isEmpty()
+                && getProcessFromProcessMap(activeProcessQueue.firstEntry()).getEndTime() != -1L){
+            Map.Entry<Long, String> longStringEntry = activeProcessQueue.pollFirstEntry();
+            return getResStringIfProcessComplete(getProcessFromProcessMap(longStringEntry).getProcessID(),
+                    getProcessFromProcessMap(longStringEntry));
+        }
+        return null;
     }
 
     private String getResStringIfProcessComplete(String processID, IProcess processFromProcessMap) {
