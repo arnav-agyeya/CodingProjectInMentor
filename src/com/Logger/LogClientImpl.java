@@ -11,7 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class LogClientImpl implements ILogClient {
 
     private ConcurrentHashMap<String, IProcess> processMap;
-    private ConcurrentSkipListMap<Long, String> activeProcessQueue;
+    private ConcurrentSkipListMap<Long, LinkedHashSet <String> > activeProcessQueue;
     private BlockingQueue<CompletableFuture<String>> pendingCallsForPoll;
     private List<ExecutorService> threadPool;
     private Lock lock = new ReentrantLock();
@@ -37,7 +37,10 @@ public class LogClientImpl implements ILogClient {
     public void start(String processId, long timestamp) {
         threadPool.get(processId.hashCode()%threadPool.size()).execute(()->{
             processMap.put(processId, new Process(processId, timestamp));
-            activeProcessQueue.put(timestamp, processId);
+            activeProcessQueue.putIfAbsent(timestamp, new LinkedHashSet<>() {{
+                add(processId);
+            }});
+            activeProcessQueue.get(timestamp).add(processId);
         });
     }
 
@@ -97,11 +100,18 @@ public class LogClientImpl implements ILogClient {
     }
 
     private String pollNow() {
-        if(!activeProcessQueue.isEmpty()
-                && getProcessFromProcessMap(activeProcessQueue.firstEntry()).getEndTime() != -1L){
-            Map.Entry<Long, String> longStringEntry = activeProcessQueue.pollFirstEntry();
-            return getResStringIfProcessComplete(getProcessFromProcessMap(longStringEntry).getProcessID(),
-                    getProcessFromProcessMap(longStringEntry));
+        if(!activeProcessQueue.isEmpty()){
+            Map.Entry<Long, LinkedHashSet<String>> firstProcessEntry = activeProcessQueue.firstEntry();
+            for(String processId : firstProcessEntry.getValue()){
+                if(getProcessFromProcessMap(processId).getEndTime()!=-1){
+                    firstProcessEntry.getValue().remove(processId);
+                    if(firstProcessEntry.getValue().isEmpty()){
+                        activeProcessQueue.pollFirstEntry();
+                    }
+                    return getResStringIfProcessComplete(getProcessFromProcessMap(processId).getProcessID(),
+                            getProcessFromProcessMap(processId));
+                }
+            }
         }
         return null;
     }
@@ -112,8 +122,8 @@ public class LogClientImpl implements ILogClient {
                 + " ,end time: " + processFromProcessMap.getEndTime();
     }
 
-    private IProcess getProcessFromProcessMap(Map.Entry<Long, String> longStringEntry) {
-        return processMap.get(longStringEntry.getValue());
+    private IProcess getProcessFromProcessMap(String processID) {
+        return processMap.get(processID);
     }
 
 }
