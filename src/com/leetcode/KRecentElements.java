@@ -20,7 +20,8 @@ public class KRecentElements {
 
         recentElMap.forEach((j,v)-> {
             System.out.println(j+" "+v);
-            queue.add(j);});
+            queue.add(j);
+        });
 
         int[] res = new int[k];
         for(int i=0;i<k;i++){

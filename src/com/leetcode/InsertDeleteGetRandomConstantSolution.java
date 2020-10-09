@@ -42,10 +42,10 @@ public class InsertDeleteGetRandomConstantSolution {
                 return false;
             }
             Integer index = map.get(val);
+            if(index>=list.size()){return true;}
             map.remove(val);
             Integer lastEl = list.get(list.size() - 1);
             list.remove(list.size()-1);
-            if(index>=list.size()){return true;}
             list.set(index, lastEl);
             map.put(lastEl,index);
 //            System.out.println("List "+ list);
