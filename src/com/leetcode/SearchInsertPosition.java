@@ -1,6 +1,10 @@
 package com.leetcode;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * https://leetcode.com/explore/challenge/card/june-leetcoding-challenge/540/week-2-june-8th-june-14th/3356/
@@ -35,6 +39,10 @@ public class SearchInsertPosition {
 
     public static void main(String[] args) {
         int[] nums = {1,3,5,6};
-        System.out.println(searchInsert(nums, 4));
+        List<Integer> integerList = Arrays.stream(nums).boxed().collect(Collectors.toList());
+        int search = Collections.binarySearch(integerList, 7);
+        System.out.println(Math.abs(search)-1);
+
+        System.out.println(searchInsert(nums, 7));
     }
 }

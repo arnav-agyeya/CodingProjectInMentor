@@ -11,7 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class LogClientImpl implements ILogClient {
 
     private ConcurrentHashMap<String, IProcess> processMap;
-    private ConcurrentSkipListMap<Long, LinkedHashSet <String> > activeProcessQueue;
+    private ConcurrentSkipListMap<Long, LinkedHashSet<String>> activeProcessQueue;
     private BlockingQueue<CompletableFuture<String>> pendingCallsForPoll;
     private List<ExecutorService> threadPool;
     private Lock lock = new ReentrantLock();
@@ -20,7 +20,7 @@ public class LogClientImpl implements ILogClient {
         processMap = new ConcurrentHashMap<>();
         activeProcessQueue = new ConcurrentSkipListMap<>(Comparator.comparingInt(Long::intValue));
         pendingCallsForPoll = new LinkedBlockingQueue<>();
-        threadPool = new ArrayList<>(){{
+        threadPool = new ArrayList<>() {{
             for (int i = 0; i < threadSize; i++) {
                 add(Executors.newSingleThreadExecutor());
             }
@@ -35,13 +35,8 @@ public class LogClientImpl implements ILogClient {
      */
     @Override
     public void start(String processId, long timestamp) {
-        threadPool.get(processId.hashCode()%threadPool.size()).execute(()->{
-            processMap.put(processId, new Process(processId, timestamp));
-            activeProcessQueue.putIfAbsent(timestamp, new LinkedHashSet<>() {{
-                add(processId);
-            }});
-            activeProcessQueue.get(timestamp).add(processId);
-        });
+        threadPool.get(processId.hashCode() % threadPool.size())
+                  .execute(() -> startProcess(processId, timestamp));
     }
 
     /**
@@ -51,22 +46,26 @@ public class LogClientImpl implements ILogClient {
      */
     @Override
     public void end(String processId) {
-        threadPool.get(processId.hashCode()%threadPool.size()).execute(()->{
-            processMap.get(processId).setEndTime(System.currentTimeMillis());
-            String result;
-            lock.lock();
-            try {
-                if (!pendingCallsForPoll.isEmpty() && (result = pollNow()) != null) {
-                    try {
-                        pendingCallsForPoll.take().complete(result);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            } finally {
-                lock.unlock();
-            }
+        threadPool.get(processId.hashCode() % threadPool.size()).execute(() -> {
+            endProcess(processId);
         });
+    }
+
+    private void endProcess(String processId) {
+        processMap.get(processId).setEndTime(System.currentTimeMillis());
+        String result;
+        lock.lock();
+        try {
+            if (!pendingCallsForPoll.isEmpty() && (result = pollNow()) != null) {
+                try {
+                    pendingCallsForPoll.take().complete(result);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -79,12 +78,12 @@ public class LogClientImpl implements ILogClient {
      * {1} started at {12} and ended at {15}
      */
     @Override
-    public String poll()  {
+    public String poll() {
 
         var result = new CompletableFuture<String>();
         lock.lock(); //lock required while working on pendingCallsForPoll as it is used by end() as well.
         try {
-            if ( pendingCallsForPoll.isEmpty()) {
+            if (pendingCallsForPoll.isEmpty()) {
                 return pollNow();
             } else {
                 pendingCallsForPoll.offer(result);
@@ -99,13 +98,19 @@ public class LogClientImpl implements ILogClient {
         }
     }
 
+    private void startProcess(String processId, long timestamp) {
+        processMap.put(processId, new Process(processId, timestamp));
+        activeProcessQueue.putIfAbsent(timestamp, new LinkedHashSet<>());
+        activeProcessQueue.get(timestamp).add(processId);
+    }
+
     private String pollNow() {
-        if(!activeProcessQueue.isEmpty()){
+        if (!activeProcessQueue.isEmpty()) {
             Map.Entry<Long, LinkedHashSet<String>> firstProcessEntry = activeProcessQueue.firstEntry();
-            for(String processId : firstProcessEntry.getValue()){
-                if(getProcessFromProcessMap(processId).getEndTime()!=-1){
+            for (String processId : firstProcessEntry.getValue()) {
+                if (getProcessFromProcessMap(processId).getEndTime() != -1) {
                     firstProcessEntry.getValue().remove(processId);
-                    if(firstProcessEntry.getValue().isEmpty()){
+                    if (firstProcessEntry.getValue().isEmpty()) {
                         activeProcessQueue.pollFirstEntry();
                     }
                     return getResStringIfProcessComplete(getProcessFromProcessMap(processId).getProcessID(),
@@ -118,8 +123,8 @@ public class LogClientImpl implements ILogClient {
 
     private String getResStringIfProcessComplete(String processID, IProcess processFromProcessMap) {
         return processID + " completed start time: "
-                + processFromProcessMap.getStartTime()
-                + " ,end time: " + processFromProcessMap.getEndTime();
+               + processFromProcessMap.getStartTime()
+               + " ,end time: " + processFromProcessMap.getEndTime();
     }
 
     private IProcess getProcessFromProcessMap(String processID) {

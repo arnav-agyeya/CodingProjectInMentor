@@ -1,9 +1,6 @@
 package com.leetcode;
 
-import org.checkerframework.checker.units.qual.A;
-
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * https://leetcode.com/explore/challenge/card/october-leetcoding-challenge/559/week-1-october-1st-october-7th/3481/
