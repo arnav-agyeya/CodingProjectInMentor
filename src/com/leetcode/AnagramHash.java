@@ -57,7 +57,21 @@ public class AnagramHash {
     }
 
     public static void main(String[] args) throws IOException {
-        int cdcd = sherlockAndAnagrams("cdcd");
-        System.out.println(cdcd);
+//        int cdcd = sherlockAndAnagrams("cdcd");
+//        System.out.println(cdcd);
+//       Boolean b1 = new Boolean("false");
+//       Boolean b2 = new Boolean("tRue");
+//       Boolean b3 = new Boolean("true");
+//       String str = null;
+//       if(str != "null"){
+//           System.out.println("KK");
+//       }
+//       Long[] dpa = new Long[]{1L, 2L, 3L, 4L, 5L};
+//       Arrays.sort(dpa,Comparator.comparingLong(o -> o));
+    }
+    private static class Test2{}
+
+    private static void throwIt() {
+        throw new RuntimeException();
     }
 }
